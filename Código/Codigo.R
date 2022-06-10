@@ -1,0 +1,262 @@
+rm(list = ls())
+setwd("C:/Users/JGMUNOZD/Desktop/MyB/Serie")  
+library(tidyverse)
+library(reshape2)
+library(ggthemes)
+library(forcats)
+library(plm)
+library(AER)
+
+
+#--------------------------OBTENCIÓN DE DATOS----------------------------------#
+
+PBI  <- read.csv("https://infra.datos.gob.ar/catalog/sspm/dataset/9/distribution/9.2/download/producto-interno-bruto-precios-corrientes-valores-trimestrales-base-2004.csv")
+
+get_balance <- function(){
+  
+  serie <- data.frame()
+  
+  for(year in rev(2018:2021)){
+    
+    for(month in rev(seq(3,12,3))){
+
+      path <- paste(as.character(year), as.character(month), "A.txt",sep = "")
+      df <- read.table(path, fill = TRUE) %>% 
+        filter(V5 == "A C T I V O" | V5 == "P A T R I M O N I O   N E T O")
+      df[, c(1,3,4,7,6)] <- NULL
+      colnames(df) <- c("banco", 
+                        "variable", 
+                        paste(year,month,sep = "-"), 
+                        paste(year,(month-1),sep = "-"), 
+                        paste(year,(month-2),sep = "-"))
+      df <- melt(df, id = c("banco","variable"))
+      colnames(df) <- c("banco", "variable", "fecha", "valor")
+      df <- dcast(df, ...~variable)
+      colnames(df) <- c("Banco", "Fecha", "Activo", "Patrimonio_Neto")
+      serie <- rbind(serie, df)
+      
+    }
+    
+  }
+  
+  serie <- serie %>% mutate(across(!c(Banco, Fecha), as.numeric))
+  serie <- serie %>% arrange(Banco)
+  return(serie)
+  
+}
+
+get_indicadores <- function(){
+  
+  serie <- data.frame()
+  
+  for(year in rev(2018:2021)){
+    
+    for(month in rev(seq(3,12,3))){
+      
+      path <- paste(as.character(year), as.character(month), "I.txt",sep = "")
+      df <- read.table(path, fill = TRUE) %>% 
+        filter(str_detect(V5, "RG15|E4|RG5|A9")) 
+      df[, c(1,3,4,6,7,11,12,13,14)] <- NULL
+      colnames(df) <- c("banco", 
+                        "variable", 
+                        paste(year,month,sep = "-"), 
+                        paste(year,(month-1),sep = "-"), 
+                        paste(year,(month-2),sep = "-"))
+      df <- melt(df, id = c("banco","variable"))
+      colnames(df) <- c("banco", "variable", "fecha", "valor")
+      df <- dcast(df, ...~variable)
+      colnames(df) <- c("Banco", "Fecha", "TCI_TF", "DxE", "ROA", "GA_A")
+      serie <- rbind(serie, df)
+      
+    }
+    
+  }
+  
+  serie <- serie %>% mutate(across(!c(Banco, Fecha), as.numeric))
+  serie <- serie %>% arrange(Banco)
+  return(serie)
+  
+}
+
+dfA <- get_balance()
+dfI <- get_indicadores()
+
+agregadas <- c("10 PRIMEROS BANCOS PRIVADOS", 
+                "COMPAÑÍAS FINANCIERAS  DE CAPITAL EXTRANJERO", 
+                "COMPAÑÍAS FINANCIERAS DE CAPITAL NACIONAL", 
+                "COMPAÑÍAS FINANCIERAS", 
+                "BANCOS SUCURSALES ENTIDADES FINANCIERAS DEL EXTERIOR", 
+                "BANCOS LOCALES DE CAPITAL EXTRANJERO", 
+                "BANCOS LOCALES DE CAPITAL NACIONAL", 
+                "BANCOS PRIVADOS", 
+                "BANCOS PÚBLICOS", 
+                "BANCOS", 
+                "SISTEMA FINANCIERO")
+
+agregado <- merge((dfA %>% filter(Banco %in% agregadas)), 
+                  (dfI %>% filter(Banco %in% agregadas))) %>% 
+  arrange(Banco, desc(Fecha)) %>% mutate(PN_A = Patrimonio_Neto/Activo)
+
+#-------------------------LIMPIEZA DE DATOS------------------------------------#
+
+
+individualA <- dfA %>% filter(!Banco %in% c(agregadas, "CAJAS DE CRÉDITO"))
+individualI <- dfI %>% filter(!Banco %in% c(agregadas, "CAJAS DE CRÉDITO"))
+
+individualA[individualA$Banco == "BBVA BANCO FRANCES S.A.", "Banco"] <- "BANCO BBVA ARGENTINA S.A."
+individualA[individualA$Banco == "BANCO DE GALICIA Y BUENOS AIRES S.A.", "Banco"] <- "BANCO DE GALICIA Y BUENOS AIRES S.A.U."
+individualA[individualA$Banco == "MULTIFINANZAS COMPAÑIA FINANCIERA S.A.", "Banco"] <- "TRANSATLANTICA COMPAÑIA FINANCIERA S.A."
+individualA[individualA$Banco == "VOLKWAGEN FINANCIAL SERVICES CIA.FIN.S.A.", "Banco"] <- "VOLKSWAGEN FINANCIAL SERVICES COMPAÑIA FINANCIERA S.A."
+individualA[individualA$Banco == "INDUSTRIAL AND COMMERCIAL BANK OF CHINA (ARGENTINA) S.A.", "Banco"] <- "INDUSTRIAL AND COMMERCIAL BANK OF CHINA (ARGENTINA) S.A.U."
+individualA[individualA$Banco == "IUDU COMPAÑÍA FINANCIERA S.A.", "Banco"] <- "CORDIAL COMPAÑÍA FINANCIERA S.A."
+individualA[individualA$Banco == "GPAT COMPAÑIA FINANCIERA S.A.", "Banco"] <- "GPAT COMPAÑIA FINANCIERA S.A.U."
+individualA[individualA$Banco == "FINANDINO COMPAÑIA FINANCIERA S.A.", "Banco"] <- "BANCO DINO S.A."
+
+individualA <- individualA %>% filter(Banco != "WILOBANK S.A." & 
+                                      Banco != "WILOBANK S.A.U." &
+                                      Banco != "BRUBANK S.A.U." & 
+                                      Banco != "BANCO SUCREDITO REGIONAL S.A.U." &
+                                      Banco != "NARANJA DIGITAL COMPAÑÍA FINANCIERA S.A.U." & 
+                                      Banco != "THE BANK OF TOKYO-MITSUBISHI UFJ, LTD." &
+                                      Banco != "BANCO WANAP S.A." & 
+                                      Banco != "MUFG BANK, LTD" & 
+                                      Banco != "BANCO DEL TUCUMAN S.A.", 
+                                      Banco != "OPEN BANK ARGENTINA S.A.", 
+                                      Banco != "BANK OF CHINA LIMITED SUCURSAL BUENOS AIRES" & 
+                                      Banco != "CREDITO REGIONAL COMPAÑIA FINANCIERA S.A." &
+                                      Banco != "BANK OF AMERICA, NATIONAL ASSOCIATION")
+
+
+individualI[individualI$Banco == "BBVA BANCO FRANCES S.A.", "Banco"] <- "BANCO BBVA ARGENTINA S.A."
+individualI[individualI$Banco == "BANCO DE GALICIA Y BUENOS AIRES S.A.", "Banco"] <- "BANCO DE GALICIA Y BUENOS AIRES S.A.U."
+individualI[individualI$Banco == "MULTIFINANZAS COMPAÑIA FINANCIERA S.A.", "Banco"] <- "TRANSATLANTICA COMPAÑIA FINANCIERA S.A."
+individualI[individualI$Banco == "VOLKWAGEN FINANCIAL SERVICES CIA.FIN.S.A.", "Banco"] <- "VOLKSWAGEN FINANCIAL SERVICES COMPAÑIA FINANCIERA S.A."
+individualI[individualI$Banco == "INDUSTRIAL AND COMMERCIAL BANK OF CHINA (ARGENTINA) S.A.", "Banco"] <- "INDUSTRIAL AND COMMERCIAL BANK OF CHINA (ARGENTINA) S.A.U."
+individualI[individualI$Banco == "IUDU COMPAÑÍA FINANCIERA S.A.", "Banco"] <- "CORDIAL COMPAÑÍA FINANCIERA S.A."
+individualI[individualI$Banco == "GPAT COMPAÑIA FINANCIERA S.A.", "Banco"] <- "GPAT COMPAÑIA FINANCIERA S.A.U."
+individualI[individualI$Banco == "FINANDINO COMPAÑIA FINANCIERA S.A.", "Banco"] <- "BANCO DINO S.A."
+
+individualI <- individualI %>% filter(Banco != "WILOBANK S.A." & 
+                                      Banco != "WILOBANK S.A.U." &
+                                      Banco != "BRUBANK S.A.U." & 
+                                      Banco != "BANCO SUCREDITO REGIONAL S.A.U." &
+                                      Banco != "NARANJA DIGITAL COMPAÑÍA FINANCIERA S.A.U." & 
+                                      Banco != "THE BANK OF TOKYO-MITSUBISHI UFJ, LTD." &
+                                      Banco != "BANCO WANAP S.A." & 
+                                      Banco != "MUFG BANK, LTD" & 
+                                      Banco != "BANCO DEL TUCUMAN S.A.", 
+                                      Banco != "OPEN BANK ARGENTINA S.A.", 
+                                      Banco != "BANK OF CHINA LIMITED SUCURSAL BUENOS AIRES" & 
+                                      Banco != "CREDITO REGIONAL COMPAÑIA FINANCIERA S.A." &
+                                      Banco != "BANK OF AMERICA, NATIONAL ASSOCIATION")
+
+
+individual <- merge(individualA, individualI) %>% 
+  arrange(Banco, desc(Fecha)) %>% mutate(PN_A = Patrimonio_Neto/Activo) %>% 
+  group_by(Fecha) %>% mutate(IC = Activo/sum(Activo)) %>% ungroup() 
+
+trimestre <- c("2018-1", "2018-4","2018-7","2018-10","2019-1", "2019-4", "2019-7","2019-10","2020-1", "2020-4", 
+               "2020-7","2020-10", "2021-1", "2021-4","2021-7","2021-10")
+trimestre2 <- c("2018-I", "2018-II","2018-III","2018-IV","2019-I", "2019-II", "2019-III","2019-IV","2020-I", "2020-II", 
+               "2020-III","2020-IV", "2021-I", "2021-II","2021-III","2021-IV")
+
+rm(dfA, dfI, individualA, individualI, agregadas)
+
+#----------------------------GRÁFICOS/ESTIMACIONES-----------------------------#
+
+# agregado %>% filter(Banco == "10 PRIMEROS BANCOS PRIVADOS" | 
+#                     Banco == "BANCOS PÚBLICOS") %>%  
+#   ggplot() + 
+#   geom_line(aes(x = fct_inorder(Fecha), y = GA_A, group = Banco, color = Banco), size = 1.2) + 
+#   scale_color_manual(values = c("#004c69", "#72737e")) + 
+#   theme_economist() + 
+#   labs(
+#     title='Gestión de gastos: Bancos públicos y privados',
+#     subtitle = '\n(2018-2021)',
+#     x = '\nAño-Mes',
+#     y = 'Gastos administrativos / activo\n',
+#     caption = "Gastos administrativos como proporción del activo (%) en función del tiempo. Fuente: BCRA. Elaboración propia") +
+#   theme(legend.title = element_blank(),
+#         legend.text=element_text(size=10),
+#         axis.text.x = element_text(angle = 90, hjust = 1)) + 
+#   scale_x_discrete(breaks = trimestre)
+#-------------------------------------------------------------------------------------------------------------------------------------
+# 
+# agregado %>% filter(Banco == "10 PRIMEROS BANCOS PRIVADOS" | 
+#                       Banco == "BANCOS PÚBLICOS" |
+#                       Banco == "BANCOS PRIVADOS") %>%  
+#   ggplot() + 
+#   geom_line(aes(x = fct_inorder(Fecha), y = TCI_TF, group = Banco, color = Banco), size = 1.2) + 
+#   scale_color_manual(values = c("#004c69", "#72737e", "#8A5CF2")) + 
+#   theme_economist() + 
+#   labs(
+#     title='Gestión de riesgo: Bancos públicos y privados',
+#     subtitle = '\n(2018-2021)',
+#     x = '\nAño-Mes',
+#     y = 'Total cartera irregular / total cartera\n',
+#     caption = "Carte irregular como proporción del total de la cartera (%) en función del tiempo. Fuente: BCRA. Elaboración propia") +
+#   theme(legend.title = element_blank(),
+#         legend.text=element_text(size=10),
+#         axis.text.x = element_text(angle = 90, hjust = 1)) + 
+#   scale_x_discrete(breaks = trimestre)
+#ggsave("MYB2.png", units="in", width=10, height=6, dpi=300)
+
+#-------------------------------------------------------------------------------------------------------------------------------------
+
+# agregado %>% filter(Banco == "BANCOS PÚBLICOS" | 
+#                     Banco == "BANCOS PRIVADOS" | 
+#                     Banco == "COMPAÑÍAS FINANCIERAS") %>% 
+#   ggplot() + 
+#   geom_line(aes(x = fct_inorder(Fecha), y = ROA, group = Banco, color = Banco), size = 1.2) + 
+#   scale_color_manual(values = c("#004c69", "#72737e", "#8A5CF2")) + 
+#   theme_economist() + 
+#   labs(
+#     title='Rentabilidad económica (ROA)',
+#     subtitle = '\n(2018-2021)',
+#     x = '\nAño-Mes',
+#     y = 'ROA\n',
+#     caption = "ROA en función del tiempo. Fuente: BCRA. Elaboración propia") +
+#   theme(legend.title = element_blank(),
+#         legend.text=element_text(size=10),
+#         axis.text.x = element_text(angle = 90, hjust = 1)) + 
+#   scale_x_discrete(breaks = trimestre) + 
+#   scale_y_continuous(breaks = seq(-5,10,2))
+#ggsave("MYB5.png", units="in", width=10, height=6, dpi=300)
+
+individual_T <- individual %>% filter(Fecha %in% trimestre) %>%
+  group_by(Banco) %>%
+  mutate(Fecha = trimestre2)
+
+pdata <- pdata.frame(individual_T, index = c("Banco", "Fecha"))
+BB1 <- pgmm(ROA ~ lag(ROA, 1) + log(Activo) + PN_A + TCI_TF + DxE + GA_A + IC | 
+                    lag(ROA, 2:99) + lag(log(Activo), 1:99) + lag(PN_A, 1:99) + 
+                  lag(TCI_TF, 1:99) + lag(DxE, 1:99) + lag(GA_A, 1:99) + lag(IC, 1:99) ,
+            data = pdata, 
+            effect = "individual", 
+            model = "onestep", 
+            transformation = "ld",
+            collapse = FALSE)
+summary(BB1)
+
+individual_T %>% group_by(Fecha) %>% summarise(n = n())
+
+re <- plm(ROA ~ log(Activo) + PN_A + TCI_TF + DxE + GA_A + IC ,  
+          fixed = c("Banco", "Fecha"), 
+          effect = "individual", 
+          model = "random", 
+          data = pdata)
+summary(re)
+
+fe <- plm(ROA ~ log(Activo) + PN_A + TCI_TF + DxE + GA_A + IC ,  
+          fixed = c("Banco", "Fecha"), 
+          effect = "individual", 
+          model = "within", 
+          data = pdata)
+summary(fe)
+
+phtest(fe, re, method = "aux")
+
+
+
+
+
