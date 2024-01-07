@@ -1,2 +1,2 @@
 # MyB
-Trabajo práctico. Moneda y bancos. 
+Análisis del sistema financiero de la República Argentina. 
